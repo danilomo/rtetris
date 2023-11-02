@@ -136,4 +136,38 @@ impl Board {
             })
             .collect::<Vec<_>>()
     }
+
+    pub fn check_completed_rows(&mut self) -> bool {
+        let len = self.matrix.len() - 2;
+        let mut return_val = false;
+
+        for i in (2..=len).rev() {
+            if self.completed_row(i) {
+                self.move_rows(i);
+                self.check_completed_rows();
+                return_val = true;
+            }
+        }
+
+        return_val
+    }
+
+    fn move_rows(&mut self, row: usize) {
+        for i in (3..=row).rev() {
+            let len = self.matrix[i].len() - 1;
+            for j in 1..len {
+                self.matrix[i][j] = self.matrix[i-1][j];
+            }
+        }
+    }
+
+    fn completed_row(&self, i: usize) -> bool {
+        for val in &self.matrix[i] {
+            if ! *val {
+                return false;
+            }
+        }
+
+        true
+    }
 }

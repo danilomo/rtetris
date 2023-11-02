@@ -2,7 +2,7 @@ pub mod board;
 pub mod patterns;
 pub mod tetromino;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, audio::PlaybackMode};
 
 use bevy::window::PrimaryWindow;
 use board::{Board, Movement};
@@ -172,6 +172,18 @@ pub fn update_tetromino(
 
         if !status && movement == Movement::Down {
             state.board.merge();
+            let completed = state.board.check_completed_rows();
+
+            if completed {
+                commands.spawn(AudioBundle {
+                    source: asset_server.load("sounds/oogas.ogg"),
+                    settings: PlaybackSettings {
+                        mode: PlaybackMode::Despawn,
+                        ..default()
+                    }
+                });
+            }
+
             state.board.tetromino = Tetromino::random();
 
             for ent in &blocks {
