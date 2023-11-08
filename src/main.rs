@@ -15,20 +15,29 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 pub struct GameState {
     pub board: Board,
     pub timer: Timer,
+    pub next: Tetromino,
+    pub score: usize,
     pub count: usize,
 }
 
 impl Default for GameState {
+    
     fn default() -> Self {
+        let mut next = Tetromino::random();
+        next.i = 4;
+        next.j = -6;
+
         GameState {
             board: Board::new(20, 15),
             timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+            next,
             count: 0,
+            score: 0,
         }
     }
 }
 
-const COLUMNS: isize = 16;
+const COLUMNS: isize = 15;
 const ROWS: isize = 20;
 const TILE_SIZE: f32 = 30.0;
 
@@ -49,15 +58,17 @@ pub struct ScheduledSound {
 #[derive(Component)]
 pub struct Block {}
 
+#[derive(Component)]
+pub struct Tile;
+
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum State {
-    #[default]
     MainMenu,
+    #[default]
     Running,
     Paused,
     GameOver,
 }
-
 
 fn main() {
     App::new()
@@ -85,7 +96,7 @@ fn main() {
         .add_systems(OnEnter(State::MainMenu), on_menu_enter)
         .add_systems(
             OnEnter(State::Running),
-            (spawn_components, on_game_start),
+            (draw_rectangle, spawn_components, on_game_start),
         )
         .add_systems(Update, update_tetromino.run_if(in_state(State::Running)))
         .add_systems(OnEnter(State::GameOver), on_game_over)
@@ -96,6 +107,220 @@ fn handle_main_menu(keyboard_input: Res<Input<KeyCode>>, mut app_state: ResMut<N
     if keyboard_input.just_released(KeyCode::Space) {
         app_state.set(State::Running);
     }
+}
+
+fn draw_rectangle(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    state: ResMut<GameState>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+) {
+    let window = window_query.get_single().unwrap();
+    let width = window.width();
+    let height = window.height();
+
+    draw_rect(
+        &mut commands,
+        &asset_server,
+        &window_query,
+        [0, 0, ROWS - 1, COLUMNS - 1],
+        &[],
+    );
+
+    draw_text(
+        &mut commands,
+        &asset_server,
+        "Score",
+        0, -6,
+        width, height
+    );
+
+    let score = format!("     {}", state.score);
+    
+    draw_text(
+        &mut commands,
+        &asset_server,
+        &score,
+        1, -6,
+        width, height
+    );
+
+    draw_rect(
+        &mut commands,
+        &asset_server,
+        &window_query,
+        [0, -8, 2, 6],
+        &[2, 3, 4],
+    );
+
+    draw_text(
+        &mut commands,
+        &asset_server,
+        " Next",
+        3, -6,
+        width, height
+    );
+
+    draw_rect(
+        &mut commands,
+        &asset_server,
+        &window_query,
+        [3, -8, 6, 6],
+        &[2, 3, 4],
+    );    
+}
+
+fn draw_text(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    text: &str,
+    i: isize,
+    j: isize,
+    width: f32,
+    height: f32,
+) {
+    let w = TILE_SIZE * COLUMNS as f32;
+    let h = TILE_SIZE * ROWS as f32;    
+
+    let x = (width/2.0) - (w/2.0) + (TILE_SIZE * j as f32);
+    let y = (height/2.0) - (h/2.0) + (TILE_SIZE * i as f32);
+
+    commands.spawn((
+        TextComponent {},
+        TextBundle::from_section(
+            text,
+            TextStyle {
+                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 30.0,
+                ..default()
+            },
+        )
+        .with_text_alignment(TextAlignment::Center)
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            top: Val::Px(y),
+            left: Val::Px(x),
+            margin: UiRect {top: Val::Px(-15.0), ..default()},
+            ..default()
+        }),
+    ));
+}
+
+fn draw_rect(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    window_query: &Query<&Window, With<PrimaryWindow>>,
+    coordinates: [isize; 4],
+    ignore: &[isize]
+) {
+    let window = window_query.get_single().unwrap();
+    let width = window.width();
+    let height = window.height();
+
+    let [i, j, rows, columns] = coordinates;
+
+    let mut transform = to_transform(i, j, width, height);
+    commands.spawn((
+        SpriteBundle {
+            transform: Transform { ..transform },
+            texture: asset_server.load("sprites/border_topleft.png"),
+            ..default()
+        },
+        Tile,
+    ));
+    let mut t = Transform { ..transform };
+    t.translation.x += TILE_SIZE * columns as f32;
+    commands.spawn((
+        SpriteBundle {
+            transform: t,
+            texture: asset_server.load("sprites/border_topright.png"),
+            ..default()
+        },
+        Tile,
+    ));
+
+    transform.translation.y -= TILE_SIZE;
+
+    for _ in 1..rows {
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform { ..transform },
+                texture: asset_server.load("sprites/border.png"),
+                ..default()
+            },
+            Tile,
+        ));
+
+        let mut t = Transform { ..transform };
+        t.translation.x += TILE_SIZE * columns as f32;
+        commands.spawn((
+            SpriteBundle {
+                transform: t,
+                texture: asset_server.load("sprites/border_right.png"),
+                ..default()
+            },
+            Tile,
+        ));
+
+        transform.translation.y -= TILE_SIZE;
+    }
+
+    commands.spawn((
+        SpriteBundle {
+            transform: Transform { ..transform },
+            texture: asset_server.load("sprites/border_bottomleft.png"),
+            ..default()
+        },
+        Tile,
+    ));
+
+    let mut t = Transform { ..transform };
+    t.translation.x += TILE_SIZE * columns as f32;
+
+    commands.spawn((
+        SpriteBundle {
+            transform: t,
+            texture: asset_server.load("sprites/border_bottomright.png"),
+            ..default()
+        },
+        Tile,
+    ));
+
+    let mut transform = to_transform(i, j, width, height);
+    transform.translation.x += TILE_SIZE;
+
+    for _j in 1..columns {
+        let mut skip = false;
+
+        for to_skip in ignore {
+            if *to_skip == _j {
+                skip = true;
+            }
+        }
+        if !skip {
+            commands.spawn((
+                SpriteBundle {
+                    transform: Transform { ..transform },
+                    texture: asset_server.load("sprites/border_top.png"),
+                    ..default()
+                },
+                Tile,
+            ));
+        }
+
+        let mut t = Transform { ..transform };
+        t.translation.y -= TILE_SIZE * rows as f32;
+        commands.spawn((
+            SpriteBundle {
+                transform: t,
+                texture: asset_server.load("sprites/border_bottom.png"),
+                ..default()
+            },
+            Tile,
+        ));
+
+        transform.translation.x += TILE_SIZE;
+    }    
 }
 
 fn handle_game_over(
@@ -178,7 +403,7 @@ fn on_game_over(
                 ..default()
             },
         )
-        .with_text_alignment(TextAlignment::Center)        
+        .with_text_alignment(TextAlignment::Center)
         .with_style(Style {
             position_type: PositionType::Absolute,
             bottom: Val::Px(5.0),
@@ -233,7 +458,9 @@ pub fn spawn_components(
 
     spawn_blocks(&state, &mut commands, width, height, &asset_server);
 
-    spawn_tetromino(commands, &state, width, height, asset_server);
+    spawn_tetromino(&mut commands, width, height, &asset_server, &state.board.tetromino);
+
+    spawn_tetromino(&mut commands, width, height, &asset_server, &state.next);
 }
 
 fn spawn_blocks(
@@ -244,23 +471,29 @@ fn spawn_blocks(
     asset_server: &Res<'_, AssetServer>,
 ) {
     for (i, j) in state.board.blocks() {
-        let file = match (i, j) {
-            (0, 0) => "sprites/border_topleft.png",
-            (0, col) if col == COLUMNS - 2 => "sprites/border_topright.png",     
-            (row, 0) if row == ROWS - 1 => "sprites/border_bottomleft.png",
-            (row, col) if row == ROWS - 1 && col == COLUMNS - 2  => "sprites/border_bottomright.png",
-            (_, 0) => "sprites/border.png",
-            (_, col) if col == COLUMNS - 2 => "sprites/border_right.png",
-            (0, _) => "sprites/border_top.png",
-            (row, _) if row == ROWS - 1 => "sprites/border_bottom.png",            
-            _ => "sprites/bujaum.png"
+        let skip = match (i, j) {
+            (0, 0) => true,
+            (0, col) if col == COLUMNS - 1 => true,
+            (row, 0) if row == ROWS - 1 => true,
+            (row, col) if row == ROWS - 1 && col == COLUMNS - 1 => true,
+            (_, 0) => true,
+            (_, col) if col == COLUMNS - 1 => true,
+            (0, _) => true,
+            (row, _) if row == ROWS - 1 => true,
+            _ => false,
         };
+
+        if skip {
+            continue;
+        }
 
         commands.spawn((
             SpriteBundle {
-                transform: Transform{ ..to_transform(i, j, width, height) },
-                texture: asset_server.load(file),
-                
+                transform: Transform {
+                    ..to_transform(i, j, width, height)
+                },
+                texture: asset_server.load("sprites/bujaum.png"),
+
                 ..default()
             },
             Block {},
@@ -269,14 +502,13 @@ fn spawn_blocks(
 }
 
 fn spawn_tetromino(
-    mut commands: Commands<'_, '_>,
-    state: &GameState,
+    commands: &mut Commands<'_, '_>,
     width: f32,
     height: f32,
-    asset_server: Res<'_, AssetServer>,
-) {
-    let tetromino = &state.board.tetromino;
+    asset_server: &Res<'_, AssetServer>,
+    tetromino: &Tetromino
 
+) {
     let rotation = tetromino.actual_rotation();
     for i in 0..4 {
         for j in 0..4 {
@@ -367,7 +599,14 @@ pub fn update_tetromino(
                 });
             }
 
-            state.board.tetromino = Tetromino::random();
+            state.next.i = 2;
+            state.next.j = 2;
+            state.board.tetromino = state.next;
+            let mut next = Tetromino::random();
+            next.i = 4;
+            next.j = -6;
+            state.next = next;
+    
 
             if state.board.overlaps() {
                 app_state.set(State::GameOver);
@@ -386,6 +625,7 @@ pub fn update_tetromino(
             commands.entity(ent).despawn();
         }
 
-        spawn_tetromino(commands, &state, width, height, asset_server);
+        spawn_tetromino(&mut commands, width, height, &asset_server, &state.board.tetromino);
+        spawn_tetromino(&mut commands, width, height, &asset_server, &state.next);
     }
 }
